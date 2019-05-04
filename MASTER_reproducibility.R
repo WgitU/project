@@ -11,7 +11,7 @@
 # This file contains instructions for reproducing the data, all
 # analyses, and plots contained in the report.
 
-# Download the repository from  GitHub [url blinded].
+# Download the repository from  GitHub [https://github.com/WgitU/project].
 # The following script assumes the working directory has
 # been set to this folder. Except raw data, all of the preprocessed 
 # data and code are now available.

@@ -31,7 +31,7 @@ report.
 
 ### Description
 
-All of the R scripts used in the report are available in a public repository on GitHub [url blinded]. The MIT license applies to all code, and no permissions are required to access the code.
+All of the R scripts used in the report are available in a public repository on GitHub [https://github.com/WgitU/project]. The MIT license applies to all code, and no permissions are required to access the code.
 
 ### Optional Information
 
