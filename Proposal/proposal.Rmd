@@ -1,0 +1,145 @@
+---
+title: "Integrative single-cell clustering analysis"
+author: Wu
+output:
+  html_document:
+    number_sections: yes
+    self_contained: no
+  pdf_document: 
+    number_sections: yes
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = TRUE, warning=FALSE)
+```
+
+# Proposal
+The recent advances in molecular biology, microfluidics and nanotechnology open a new avenue for the precision medicine. The key to the precison treatment is discovering the heterogeneity at the cellular level. The maturation of single-cell sequencing technologies provides unique opportunities for us to detect the characteristics of individual cell. Single-cell RNA sequencing (scRNA-seq) is one of the most widely used single-cell sequencing approaches. Although scRNA-seq technologies have yielded transformative insights into cellular diversity and development, they also limit the ability to derive a deep understanding of the relationships between biomolecules in single cells. The analysis of scRNA-seq data in conjunction with other data types contributes to study cells from multiple perspectives. 
+
+In this project, finding a clustering method to detect the heterogeneity between single cells and integrating scRNA-seq and DNA methylation data to make clustering more accurate are the core. DNA methylation data is a good complemet to scRNA-seq data since methylation in the vicinity of the promoter is associated with the absence of transcription. Angermueller, C. et al. [^1] performed parallel DNA methylome and transcriptome sequencing in the same cell and examines the relationships between DNA methylation and gene expression. Linker, S. M. et al. [^2] applied parallel DNA methylation and transcriptome sequencing to differentiate human induced pluripotent stem cells. But there is no efficient method which integrates multi-data for analysis.
+
+The data used for the project is under accession GSE74535 on the website of NCBI. Both scRNA-seq and DNA methylation data for serum embryonic stem cells are available in this data source, which meet the requirements of project.
+
+From the EDA, the scRNA-seq is recorded as count data. And there exists zero-inflated effects in the scRNA-seq data. Hierarchical Bayesian model is able to take these factors into account. Combinig DNA methylation data can also be achieved. So a Bayesian model is planned for the project.
+
+
+[^1]: Angermueller, Christof, et al. "Parallel single-cell sequencing links transcriptional and epigenetic heterogeneity." Nature methods 13.3 (2016): 229.
+
+[^2]: Linker, Stephanie M., et al. "Combined single-cell profiling of expression and DNA methylation reveals splicing regulation and heterogeneity." Genome Biology 20.1 (2019): 30.
+
+# EDA
+## Input data
+```{r message=FALSE, warning=FALSE, include=T}
+setwd("../data")
+library(dplyr)
+library(readr)
+RNA <- read.csv("GSE74534_RNA-seq_raw_counts.csv")
+scMT <- readRDS('GSE74534_DNAm.rds')
+id_vec <- unique(scMT$ens_id)
+RNA_sub <- filter(RNA, RNA[,1]%in%id_vec)
+scMT_sub <- select(scMT, c(sample, ens_id, weight))
+rownames(RNA_sub) <- RNA_sub[,1]
+RNA_sub <- RNA_sub[,-1]
+RNA <- RNA_sub
+A02 <- as.data.frame(read_delim("A02.cov",delim="\t",col_names = F))
+```
+
+## Data information
+The data includes 7356 genes and 61 serum embryonic stem cells. The scRNA-seq is recorded as count data. Large size of zero in scRNA-seq shows the existence of zero-inflated effects. The model in this project is supposed to account for zero-inflated effects.
+```{r message=FALSE, warning=FALSE, include=T}
+#### scRNA-seq data
+head(RNA)
+tail(RNA)
+dim(RNA)
+head(RNA, n = 3L)
+summary(RNA)
+##### zero-inflated effects
+colSums(RNA == 0)/dim(RNA)[1]
+
+## a example of DNA methylation data
+A02 <- A02[,c(1,2,5)]
+head(A02)
+tail(A02)
+dim(A02)
+
+```
+
+## Data Preprocessing
+The scRNA-seq data need to be normalized to remove scale effects.
+```{r, include=T}
+m <- median(colSums(RNA))
+tmp <- m/colSums(RNA)
+tmp_mat <- t(matrix(tmp, dim(RNA)[2], dim(RNA)[1]))
+RNA_norm <- floor(RNA*tmp)
+```
+
+## Data visualization
+For intuitive performance, 500 most variable genes of cells are selected to make data heatmaps. To detect characteristics of cells, the mean and standard deviation of gene expression in each cell are shown in the figure. The high ratio of zero expression in scRNA-seq data shows zero-inflated effects and differences between cells. All of these analyses exhibit the heterogeneity between single cells, and the data is suitable for clustering.
+```{r, include=T, warning=FALSE}
+#### visualization of 500 most variable genes 
+RNA_sd <- apply(RNA_norm, 1, sd)
+RNA_cbind <- cbind(RNA,RNA_sd)
+RNA_500 <- cbind(RNA,RNA_sd) %>% arrange(desc(RNA_sd)) %>% head(500)
+RNA_500 <- RNA_500[,-62]
+RNA_500 <- RNA_500[,-1]
+
+suppressMessages(library(plotly))
+vals <- unique(scales::rescale(c(volcano)))
+o <- order(vals, decreasing = FALSE)
+cols <- scales::col_numeric("Blues", domain = NULL)(vals)
+colz <- setNames(data.frame(vals[o], cols[o]), NULL)
+plot_ly(z = as.matrix(RNA_500), zmax=10000,zmin=0, colorscale = colz, type = "heatmap")%>%
+  layout(title = "Heatmap of scRNA-seq data",
+         xaxis = list(title = "Cell"), 
+         yaxis = list(title = "Gene"))
+
+#### Mean and standard deviations of single cells 
+mean_sd <- as.data.frame(cbind(colSums(RNA_norm), apply(RNA_norm,2,sd)))
+colnames(mean_sd) <- c("mean","sd")
+plot_ly(data = mean_sd ,y = ~sd, x = ~mean, 
+        color = ~sd,mode = 'markers',showlegend=T)%>%
+  layout(
+    title = "Single cell mean and standard deviations",
+    xaxis = list(title = "mean")
+    , yaxis = list(title = "sd"))
+
+
+
+#### visualization of zero-inflated effects
+zero_ratio <- colSums(RNA_norm == 0)/dim(RNA_norm)[1]
+rate_count <- as.data.frame(cbind(zero_ratio, colSums(RNA_norm)))
+plot_ly(data = rate_count ,y = ~rate_count[,1], x = ~rate_count[,2], 
+        color = ~zero_ratio,mode = 'markers',showlegend=T)%>%
+  layout(title = "Zero-inflated effects",
+         xaxis = list(title = "total read counts of each single cell"),
+         yaxis = list(title = "zero ratio"))
+
+zero_ratio_r <- rowSums(RNA_norm == 0)/dim(RNA_norm)[2]
+zero_ratio_r <- as.data.frame(cbind(zero_ratio_r, rowSums(RNA_norm)))
+plot_ly(data = zero_ratio_r ,y = ~zero_ratio_r, x = ~V2, 
+        color = ~zero_ratio_r,mode = 'markers',showlegend=T)%>%
+  layout(title = "Zero-inflated effects",
+         xaxis = list(title = "total read counts of each single gene"),
+         yaxis = list(title = "zero ratio"))
+
+```
+
+## Kmeans
+The clustering result of scRNA-seq with Kmeans method is poor. So integrating both scRNA-seq and DNA methylation data is supposed to be considered in the project.
+```{r, include=T}
+suppressMessages(library(factoextra))
+df<-t(RNA_norm)
+fviz_nbclust(df, kmeans, method = "wss",k.max=10) + geom_vline(xintercept = 6, linetype = 2)
+set.seed(159753)
+km_result <- kmeans(df, 6)
+fviz_cluster(km_result, data = df,
+             ellipse = F,
+             show.clust.cent = F,
+             shape = 1,
+             repel = F,
+             ggtheme = theme_grey()
+)
+
+
+```

@@ -1,0 +1,29 @@
+---
+title: "About"
+output: html_document
+---
+Shiny, Shiny, little star
+
+How I wonder what you are
+
+Up above the world so high
+
+Like a diamond in the sky.
+
+
+
+This application is governed by the CeCILL-B license. 
+
+You can use, modify and/or redistribute these codes under the terms of the CeCILL license.
+
+
+
+This Shiny application requires the following packages.
+- plotly
+- readr
+- factoextra
+
+
+WU
+
+April 15th, 2019
